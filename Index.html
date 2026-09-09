@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Chronicle — a timeline for learning history</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --paper:#ECE4D0;
+    --paper-deep:#E2D8BE;
+    --panel:#F6F1E3;
+    --ink:#241C12;
+    --ink-soft:#5B513F;
+    --line:#A9946A;
+    --brass:#A97C3C;
+    --verdigris:#3F6357;
+    --rose:#93493C;
+    --indigo:#38475F;
+    --olive:#63652E;
+    --today:#B8402C;
+  }
+  *{box-sizing:border-box;}
+  .hidden{display:none !important;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    overflow:hidden;
+    height:100vh;
+    width:100vw;
+  }
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  header{
+    padding:18px 16px 14px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--paper-deep),var(--paper));
+  }
+  h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:26px;
+    margin:0 0 2px;
+    letter-spacing:0.2px;
+  }
+  header p.sub{
+    margin:0 0 14px;
+    color:var(--ink-soft);
+    font-size:13px;
+  }
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+  }
+  .seg{
+    display:flex;
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .seg button{
+    border:none;
+    background:transparent;
+    color:var(--ink);
+    padding:7px 12px;
+    font-size:13px;
+    font-family:inherit;
+    cursor:pointer;
+    border-right:1px solid var(--line);
+  }
+  .seg button:last-child{border-right:none;}
+  .seg button.active{background:var(--verdigris);color:var(--panel);}
+  .iconbtn{
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--ink);
+    width:32px;height:32px;
+    border-radius:8px;
+    font-size:16px;
+    cursor:pointer;
+    line-height:1;
+  }
+  .jumpform{display:flex;gap:6px;align-items:center;}
+  .jumpform input{
+    width:88px;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-family:inherit;
+    font-size:13px;
+    background:var(--panel);
+    color:var(--ink);
+  }
+  .jumpform button{
+    border:1px solid var(--line);
+    background:var(--panel);
+    padding:6px 10px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .addbtn{
+    margin-left:auto;
+    border:1px solid var(--verdigris);
+    background:var(--verdigris);
+    color:var(--panel);
+    padding:7px 14px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+    font-family:inherit;
+  }
+
+  #timeline-wrap{flex:1;position:relative;overflow:hidden;}
+  #timeline-scroll{
+    position:absolute;inset:0;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+  }
+  #timeline-track{
+    position:relative;
+    height:100%;
+    min-width:100%;
+  }
+  .baseline{
+    position:absolute;
+    left:0;right:0;
+    top:50%;
+    height:3px;
+    background:var(--line);
+    transform:translateY(-50%);
+  }
+  .tick{
+    position:absolute;
+    top:50%;
+    width:1px;
+    background:var(--line);
+    opacity:0.55;
+  }
+  .tick.major{opacity:0.9;background:var(--brass);}
+  .tick-label{
+    position:absolute;
+    top:calc(50% + 10px);
+    transform:translateX(-50%);
+    font-size:11px;
+    color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  .tick-label.major{color:var(--ink);font-weight:600;}
+  .todayline{
+    position:absolute;
+    top:0;bottom:0;
+    width:2px;
+    background:var(--today);
+    opacity:0.75;
+  }
+  .todaylabel{
+    position:absolute;
+    top:8px;
+    transform:translateX(-50%);
+    font-size:10px;
+    background:var(--today);
+    color:#fff;
+    padding:2px 6px;
+    border-radius:6px;
+    white-space:nowrap;
+  }
+
+  .marker{
+    position:absolute;
+    top:50%;
+    transform:translate(-50%,-50%);
+    width:16px;height:16px;
+    border-radius:50%;
+    border:2px solid var(--panel);
+    cursor:pointer;
+    box-shadow:0 1px 3px rgba(0,0,0,0.35);
+  }
+  .marker:hover{transform:translate(-50%,-50%) scale(1.25);}
+  .marker.above{top:calc(50% - 28px);}
+  .marker.below{top:calc(50% + 28px);}
+  .marker-title{
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:11px;
+    white-space:nowrap;
+    max-width:140px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    color:var(--ink);
+    pointer-events:none;
+    background:rgba(236,228,208,0.85);
+    padding:0 3px;
+    border-radius:3px;
+  }
+  .marker.above .marker-title{top:-16px;}
+  .marker.below .marker-title{top:16px;}
+
+  .legend{
+    position:absolute;
+    left:16px;bottom:12px;
+    display:flex;gap:12px;flex-wrap:wrap;
+    background:rgba(246,241,227,0.9);
+    padding:6px 10px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    font-size:11px;
+    color:var(--ink-soft);
+  }
+  .legend span{display:inline-flex;align-items:center;gap:5px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+  .hint{
+    position:absolute;right:16px;bottom:12px;
+    font-size:11px;color:var(--ink-soft);
+    background:rgba(246,241,227,0.9);
+    padding:6px 10px;border-radius:8px;border:1px solid var(--line);
+  }
+
+  /* overlay panels */
+  .overlay{
+    position:fixed;inset:0;
+    background:rgba(36,28,18,0.45);
+    display:flex;
+    justify-content:flex-end;
+    z-index:50;
+  }
+  .overlay.hidden{display:none;}
+  .panel{
+    width:min(420px,92vw);
+    height:100%;
+    background:var(--panel);
+    box-shadow:-6px 0 24px rgba(0,0,0,0.25);
+    padding:22px 20px;
+    overflow-y:auto;
+  }
+  .panel-close{
+    float:right;
+    border:none;background:transparent;
+    font-size:20px;cursor:pointer;color:var(--ink-soft);
+  }
+  .panel .era{
+    display:inline-block;
+    font-size:12px;
+    color:var(--panel);
+    background:var(--indigo);
+    padding:3px 9px;
+    border-radius:6px;
+    margin-bottom:10px;
+  }
+  .panel h2{
+    font-family:'Fraunces',serif;
+    font-size:24px;
+    margin:2px 0 4px;
+    font-weight:600;
+  }
+  .panel .date{color:var(--ink-soft);font-size:13px;margin-bottom:16px;}
+  .panel .body{font-size:14.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap;}
+  .panel .delete{
+    margin-top:22px;
+    border:1px solid var(--rose);
+    color:var(--rose);
+    background:transparent;
+    padding:7px 12px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:13px;
+  }
+
+  /* add form */
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;
+  }
+  .field input, .field select, .field textarea{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:#fff;
+    font-family:inherit;
+    font-size:13.5px;
+    color:var(--ink);
+  }
+  .field textarea{min-height:90px;resize:vertical;}
+  .row2{display:flex;gap:10px;}
+  .row2 .field{flex:1;}
+  .submitbtn{
+    width:100%;
+    padding:11px;
+    border:none;
+    border-radius:8px;
+    background:var(--verdigris);
+    color:var(--panel);
+    font-size:14px;
+    cursor:pointer;
+    font-family:inherit;
+    margin-top:4px;
+  }
+  .signoutbtn{
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--ink-soft);
+    padding:7px 10px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .formerror{color:var(--rose);font-size:12.5px;margin-top:8px;min-height:16px;}
+  .authgate{
+    position:fixed;inset:0;
+    background:var(--paper);
+    display:flex;align-items:center;justify-content:center;
+    z-index:100;
+  }
+  .authgate.hidden{display:none;}
+  .authbox{
+    width:min(360px,90vw);
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:26px 24px;
+  }
+  .authbox h2{font-family:'Fraunces',serif;font-size:22px;margin:0 0 4px;}
+  .authbox p{color:var(--ink-soft);font-size:13px;margin:0 0 18px;}
+</style>
+</head>
+<body>
+
+<div class="authgate" id="authGate">
+  <div class="authbox">
+    <h2>Chronicle</h2>
+    <p>Sign in with the account you created in your Firebase console. This keeps your timeline the same across every device.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="loginEmail" required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPassword" required>
+      </div>
+      <button type="submit" class="submitbtn">Sign in</button>
+      <div class="formerror" id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Chronicle</h1>
+    <p class="sub">A single line from 6000 BC to today. Zoom in, click a mark, learn what happened.</p>
+    <div class="controls">
+      <div class="seg" id="granSeg">
+        <button data-g="decade" class="active">Decades</button>
+        <button data-g="year">Years</button>
+        <button data-g="month">Months</button>
+        <button data-g="day">Days</button>
+      </div>
+      <button class="iconbtn" id="zoomOut" title="Zoom out">–</button>
+      <button class="iconbtn" id="zoomIn" title="Zoom in">+</button>
+      <form class="jumpform" id="jumpForm">
+        <input id="jumpYear" type="text" placeholder="e.g. 1969 or 500 BC">
+        <button type="submit">Go</button>
+      </form>
+      <button class="addbtn" id="openAdd">+ Add event</button>
+      <button class="signoutbtn" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <div id="timeline-wrap">
+    <div id="timeline-scroll">
+      <div id="timeline-track">
+        <div class="baseline"></div>
+        <div id="ticks"></div>
+        <div id="markers"></div>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="hint">Drag to scroll · click a dot to read</div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="detailOverlay">
+  <div class="panel">
+    <button class="panel-close" id="closeDetail">&times;</button>
+    <div class="era" id="dEra"></div>
+    <h2 id="dTitle"></h2>
+    <div class="date" id="dDate"></div>
+    <div class="body" id="dBody"></div>
+    <button class="delete hidden" id="dDelete">Delete this event</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="addOverlay">
+  <div class="panel">
+    <button class="panel-close" id="closeAdd">&times;</button>
+    <h2 style="font-family:'Fraunces',serif;font-size:22px;margin-top:2px;">Add an event</h2>
+    <form id="addForm">
+      <div class="field">
+        <label>Title</label>
+        <input type="text" id="fTitle" required placeholder="e.g. The Berlin Wall falls">
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Year</label>
+          <input type="number" id="fYear" required min="1" placeholder="e.g. 1989">
+        </div>
+        <div class="field">
+          <label>Era</label>
+          <select id="fEra">
+            <option value="AD">AD / CE</option>
+            <option value="BC">BC / BCE</option>
+          </select>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Month (optional)</label>
+          <select id="fMonth">
+            <option value="">—</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Day (optional)</label>
+          <input type="number" id="fDay" min="1" max="31" placeholder="e.g. 9">
+        </div>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select id="fCategory">
+          <option value="verdigris">General history</option>
+          <option value="brass">Science &amp; technology</option>
+          <option value="rose">War &amp; politics</option>
+          <option value="indigo">Art &amp; culture</option>
+          <option value="olive">Society &amp; ideas</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>What happened</label>
+        <textarea id="fBody" required placeholder="Write the explanation the reader will see when they click this event."></textarea>
+      </div>
+      <button type="submit" class="submitbtn">Add to timeline</button>
+    </form>
+  </div>
+</div>
+
+<script>
+// ---------- time model ----------
+// astronomical year numbering: 1 BC = year 0, n BC = year (1-n), AD years are positive as usual.
+const START_YEAR = -5999; // 6000 BC
+const END_YEAR = 2026;
+const TOTAL_YEARS = END_YEAR - START_YEAR;
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function toAstronomical(year, era){ return era === "BC" ? (1 - year) : year; }
+function yearLabel(yearValue){
+  const y = Math.round(yearValue);
+  return y <= 0 ? `${1 - y} BC` : `${y}`;
+}
+function yearValueOf(year, era, month, day){
+  let v = toAstronomical(year, era);
+  if (month != null && month !== ""){
+    const mi = MONTHS.indexOf(month);
+    const d = day && day > 0 ? day : 1;
+    v += (mi + (d-1)/30) / 12;
+  }
+  return v;
+}
+
+// ---------- sample data ----------
+const builtinEvents = [
+  {id:"b1", title:"Farming and settlement spreads", year:-5999, cat:"olive", body:"Across Mesopotamia, the Yellow River valley and Mesoamerica, communities are shifting from foraging to farming, giving rise to the first permanent villages."},
+  {id:"b2", title:"Stonehenge's earliest phase begins", year:-2999, cat:"olive", body:"Construction begins on the ditch and bank at Stonehenge in southern England — the monument will be rebuilt and expanded for over a thousand years."},
+  {id:"b3", title:"Egyptian hieroglyphic writing emerges", year:-3199, cat:"indigo", body:"One of the earliest full writing systems develops along the Nile, used first for administration and religious inscriptions."},
+  {id:"b4", title:"The Great Pyramid of Giza is completed", year:-2560, cat:"indigo", body:"Built as a tomb for the pharaoh Khufu, it will remain the tallest human-made structure on Earth for almost 3,800 years."},
+  {id:"b5", title:"Code of Hammurabi is carved", year:-1754, cat:"olive", body:"One of the earliest and most complete written legal codes is set down in Babylon, listing 282 laws on a stone stele."},
+  {id:"b6", title:"Greek philosophers describe optics", year:-400, cat:"brass", body:"Chinese and Greek thinkers, including Mozi and Aristotle, describe how light travels in straight lines through a small opening — the basic principle behind the camera obscura."},
+  {id:"b7", title:"The Great Library of Alexandria flourishes", year:-250, cat:"indigo", body:"Under the Ptolemies, Alexandria becomes the ancient world's great center of scholarship, gathering scrolls from across the Mediterranean and beyond."},
+  {id:"b8", title:"Julius Caesar is assassinated", year:-44, cat:"rose", body:"On the Ides of March, Roman senators kill Caesar in the Senate house, setting off the civil wars that end the Republic."},
+  {id:"b9", title:"Printing with movable type in China", year:1040, cat:"brass", body:"Bi Sheng develops movable type made of baked clay, centuries before Gutenberg's press in Europe."},
+  {id:"b10", title:"The Black Death reaches Europe", year:1347, cat:"olive", body:"A plague pandemic arrives via trade routes and kills an estimated third of Europe's population over the following years."},
+  {id:"b11", title:"Gutenberg's printing press", year:1440, cat:"brass", body:"Johannes Gutenberg develops a printing press with movable metal type in Mainz, transforming how information spreads across Europe."},
+  {id:"b12", title:"Columbus reaches the Americas", year:1492, cat:"rose", body:"Christopher Columbus's expedition, sailing for Spain, makes landfall in the Caribbean, beginning sustained contact between Europe and the Americas."},
+  {id:"b13", title:"Newton publishes the Principia", year:1687, cat:"brass", body:"Isaac Newton's Philosophiæ Naturalis Principia Mathematica lays out the laws of motion and universal gravitation."},
+  {id:"b14", title:"American Declaration of Independence", year:1776, cat:"rose", body:"The thirteen American colonies formally declare independence from Great Britain."},
+  {id:"b15", title:"French Revolution begins", year:1789, cat:"rose", body:"The storming of the Bastille marks the start of a revolution that will overturn the French monarchy."},
+  {id:"b16", title:"Niépce achieves the first photograph", year:1814, cat:"brass", body:"Using a camera obscura, Joseph Nicéphore Niépce captures the first known permanent photographic image."},
+  {id:"b17", title:"Daguerre introduces the daguerreotype", year:1837, cat:"brass", body:"Louis Daguerre unveils a process that fixes an image permanently onto a silver-plated sheet, launching practical photography."},
+  {id:"b18", title:"Darwin publishes On the Origin of Species", year:1859, cat:"brass", body:"Charles Darwin lays out the theory of evolution by natural selection, reshaping biology."},
+  {id:"b19", title:"Archer invents the Collodion process", year:1851, cat:"brass", body:"Frederick Scott Archer's wet-plate process cuts photographic exposure time down to just 2–3 seconds."},
+  {id:"b20", title:"American Civil War ends", year:1865, cat:"rose", body:"The Confederacy surrenders, preserving the Union and leading to the abolition of slavery in the United States."},
+  {id:"b21", title:"Eastman patents the Kodak", year:1888, cat:"brass", body:"George Eastman patents a roll-film camera, putting photography into the hands of ordinary people for the first time."},
+  {id:"b22", title:"The Kodak Brownie goes on sale", year:1900, cat:"brass", body:"The first mass-marketed camera, priced at one dollar, turns photography into a hobby anyone can afford."},
+  {id:"b23", title:"World War I begins", year:1914, cat:"rose", body:"The assassination of Archduke Franz Ferdinand sets off a war that will draw in empires across the globe."},
+  {id:"b24", title:"General Electric invents the flash bulb", year:1927, cat:"brass", body:"A practical, disposable flash bulb makes indoor and night photography far more accessible."},
+  {id:"b25", title:"World War II ends", year:1945, cat:"rose", body:"Following the surrender of Japan, the Second World War comes to a close after six years of global conflict."},
+  {id:"b26", title:"Edwin Land launches the Polaroid camera", year:1948, cat:"brass", body:"The first instant camera lets people see a finished photograph within minutes of taking it."},
+  {id:"b27", title:"Apollo 11 lands on the Moon", year:1969, month:"July", day:20, cat:"brass", body:"Neil Armstrong and Buzz Aldrin become the first humans to walk on the Moon."},
+  {id:"b28", title:"Polaroid introduces instant color film", year:1963, cat:"brass", body:"Color prints become available seconds after the shutter click, not just black and white."},
+  {id:"b29", title:"Konica introduces autofocus", year:1978, cat:"brass", body:"The first point-and-shoot autofocus camera removes the need to manually focus a lens."},
+  {id:"b30", title:"The Berlin Wall falls", year:1989, month:"November", day:9, cat:"rose", body:"East German authorities open the border, and crowds begin tearing down the wall that had divided Berlin since 1961."},
+  {id:"b31", title:"Canon demonstrates the first digital still camera", year:1984, cat:"brass", body:"Canon's prototype electronic still camera points toward a future where film is no longer required at all."},
+  {id:"b32", title:"World Wide Web goes public", year:1991, cat:"brass", body:"Tim Berners-Lee's World Wide Web becomes publicly available, changing how information is shared globally."},
+  {id:"b33", title:"The first iPhone is released", year:2007, month:"June", day:29, cat:"brass", body:"Apple's iPhone combines a phone, camera and computer, accelerating the shift to camera-equipped smartphones."},
+  {id:"b34", title:"COVID-19 is declared a pandemic", year:2020, month:"March", day:11, cat:"olive", body:"The World Health Organization declares a global pandemic as a novel coronavirus spreads across the world."},
+];
+
+let customEvents = [];
+
+function allEvents(){
+  return [...builtinEvents.map(e=>({...e, yv: yearValueOf(e.year, "AD", e.month, e.day), custom:false})),
+          ...customEvents];
+}
+
+// ---------- firebase ----------
+// Paste the config object from Firebase console > Project settings > Your apps > SDK setup.
+const firebaseConfig = {
+  apiKey: "PASTE_YOUR_API_KEY",
+  authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
+  projectId: "PASTE_YOUR_PROJECT_ID",
+  storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
+  messagingSenderId: "PASTE_YOUR_SENDER_ID",
+  appId: "PASTE_YOUR_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+db.enablePersistence({ synchronizeTabs: true }).catch(() => { /* offline cache unavailable in this browser/tab */ });
+
+let unsubscribeEvents = null;
+function subscribeEvents(){
+  if (unsubscribeEvents) unsubscribeEvents();
+  unsubscribeEvents = db.collection('events').onSnapshot(snapshot => {
+    customEvents = snapshot.docs.map(doc => {
+      const d = doc.data();
+      return { ...d, id: doc.id, yv: yearValueOf(d.year, d.era, d.month, d.day), custom: true };
+    });
+    render();
+  }, err => console.error('sync error', err));
+}
+
+auth.onAuthStateChanged(user => {
+  const gate = document.getElementById('authGate');
+  const app = document.getElementById('app');
+  if (user){
+    gate.classList.add('hidden');
+    app.classList.remove('hidden');
+    subscribeEvents();
+  } else {
+    gate.classList.remove('hidden');
+    app.classList.add('hidden');
+  }
+});
+
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  try{
+    await auth.signInWithEmailAndPassword(email, password);
+  }catch(err){
+    errEl.textContent = err.message.replace(/^Firebase:\s*/,'');
+  }
+});
+
+document.getElementById('signOutBtn').addEventListener('click', () => auth.signOut());
+
+// ---------- state ----------
+let granularity = 'decade';
+const SCALES = { decade: 6, year: 42, month: 420, day: 3200 }; // px per year
+let scale = SCALES[granularity];
+const track = document.getElementById('timeline-track');
+const scrollWrap = document.getElementById('timeline-scroll');
+const ticksLayer = document.getElementById('ticks');
+const markersLayer = document.getElementById('markers');
+
+function xFor(yv){ return (yv - START_YEAR) * scale; }
+
+function setTrackWidth(){
+  track.style.width = Math.max(xFor(END_YEAR) + 200, scrollWrap.clientWidth) + 'px';
+}
+
+function visibleRange(){
+  const buffer = scrollWrap.clientWidth * 0.6;
+  const left = scrollWrap.scrollLeft - buffer;
+  const right = scrollWrap.scrollLeft + scrollWrap.clientWidth + buffer;
+  return { yLeft: left/scale + START_YEAR, yRight: right/scale + START_YEAR, left, right };
+}
+
+function renderTicks(){
+  const { yLeft, yRight } = visibleRange();
+  ticksLayer.innerHTML = '';
+  let step, majorEvery, fmt;
+  if (granularity === 'decade'){ step = 10; majorEvery = 10; fmt = v => yearLabel(v); }
+  else if (granularity === 'year'){ step = 1; majorEvery = 10; fmt = v => yearLabel(v); }
+  else if (granularity === 'month'){ step = 1/12; majorEvery = 12; fmt = null; }
+  else { step = 1/365; majorEvery = 365; fmt = null; }
+
+  let startTick = Math.floor(yLeft/step)*step;
+  let count = 0;
+  for (let v = startTick; v <= yRight && count < 1400; v += step, count++){
+    const idxFromZero = Math.round((v - Math.floor(v/(step*majorEvery))*(step*majorEvery)) / step);
+    const isMajor = Math.abs(Math.round(v/step) % majorEvery) === 0;
+    const x = xFor(v);
+    const tick = document.createElement('div');
+    tick.className = 'tick' + (isMajor ? ' major' : '');
+    tick.style.left = x + 'px';
+    tick.style.height = isMajor ? '20px' : '10px';
+    ticksLayer.appendChild(tick);
+
+    let showLabel = isMajor;
+    if (granularity === 'month' && !isMajor) showLabel = true;
+    if (granularity === 'day' && !isMajor) showLabel = (Math.round(v/step) % 5 === 0);
+
+    if (showLabel){
+      const lbl = document.createElement('div');
+      lbl.className = 'tick-label' + (isMajor ? ' major' : '');
+      lbl.style.left = x + 'px';
+      if (fmt){ lbl.textContent = fmt(v); }
+      else {
+        const yearFloor = Math.floor(v);
+        const frac = v - yearFloor;
+        if (granularity === 'month'){
+          const mi = Math.round(frac*12) % 12;
+          lbl.textContent = isMajor ? yearLabel(yearFloor) : MONTHS[mi].slice(0,3);
+        } else {
+          const mi = Math.floor(frac*12) % 12;
+          const dayOfMonth = Math.round(((frac*12) % 1) * 30) + 1;
+          lbl.textContent = isMajor ? (MONTHS[mi].slice(0,3) + ' ' + yearLabel(yearFloor)) : String(dayOfMonth);
+        }
+      }
+      ticksLayer.appendChild(lbl);
+    }
+  }
+
+  // today marker
+  const today = document.getElementById('todayline-el');
+  if (today) today.remove();
+  const todayLbl = document.getElementById('todaylabel-el');
+  if (todayLbl) todayLbl.remove();
+  const todayYV = 2026.687;
+  if (todayYV >= yLeft && todayYV <= yRight){
+    const x = xFor(todayYV);
+    const line = document.createElement('div');
+    line.className = 'todayline'; line.id = 'todayline-el';
+    line.style.left = x + 'px';
+    ticksLayer.appendChild(line);
+    const lbl = document.createElement('div');
+    lbl.className = 'todaylabel'; lbl.id = 'todaylabel-el';
+    lbl.style.left = x + 'px';
+    lbl.textContent = 'Today';
+    ticksLayer.appendChild(lbl);
+  }
+}
+
+const CAT_COLORS = { verdigris:'#3F6357', brass:'#A97C3C', rose:'#93493C', indigo:'#38475F', olive:'#63652E' };
+const CAT_LABELS = { verdigris:'General history', brass:'Science & technology', rose:'War & politics', indigo:'Art & culture', olive:'Society & ideas' };
+
+function renderMarkers(){
+  markersLayer.innerHTML = '';
+  const events = allEvents();
+  events.forEach((e, i) => {
+    const x = xFor(e.yv);
+    const dot = document.createElement('div');
+    dot.className = 'marker ' + (i % 2 === 0 ? 'above' : 'below');
+    dot.style.left = x + 'px';
+    dot.style.background = CAT_COLORS[e.cat] || CAT_COLORS.verdigris;
+    dot.title = e.title;
+    dot.addEventListener('click', () => openDetail(e));
+
+    const label = document.createElement('div');
+    label.className = 'marker-title';
+    label.textContent = e.title;
+    dot.appendChild(label);
+
+    markersLayer.appendChild(dot);
+  });
+}
+
+function renderLegend(){
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  Object.keys(CAT_LABELS).forEach(k => {
+    const span = document.createElement('span');
+    span.innerHTML = `<span class="dot" style="background:${CAT_COLORS[k]}"></span>${CAT_LABELS[k]}`;
+    legend.appendChild(span);
+  });
+}
+
+function render(){
+  setTrackWidth();
+  renderTicks();
+  renderMarkers();
+}
+
+// ---------- interactions ----------
+document.querySelectorAll('#granSeg button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#granSeg button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const centerYV = (scrollWrap.scrollLeft + scrollWrap.clientWidth/2)/scale + START_YEAR;
+    granularity = btn.dataset.g;
+    scale = SCALES[granularity];
+    setTrackWidth();
+    scrollWrap.scrollLeft = xFor(centerYV) - scrollWrap.clientWidth/2;
+    render();
+  });
+});
+
+document.getElementById('zoomIn').addEventListener('click', () => zoom(1.5));
+document.getElementById('zoomOut').addEventListener('click', () => zoom(1/1.5));
+function zoom(factor){
+  const centerYV = (scrollWrap.scrollLeft + scrollWrap.clientWidth/2)/scale + START_YEAR;
+  scale = Math.min(Math.max(scale * factor, 1), 6000);
+  setTrackWidth();
+  scrollWrap.scrollLeft = xFor(centerYV) - scrollWrap.clientWidth/2;
+  render();
+}
+
+scrollWrap.addEventListener('scroll', () => { renderTicks(); });
+window.addEventListener('resize', render);
+
+// drag to scroll (mouse)
+let isDown = false, startX, startScroll;
+scrollWrap.addEventListener('mousedown', e => { isDown = true; startX = e.pageX; startScroll = scrollWrap.scrollLeft; });
+window.addEventListener('mouseup', () => isDown = false);
+window.addEventListener('mousemove', e => {
+  if (!isDown) return;
+  scrollWrap.scrollLeft = startScroll - (e.pageX - startX);
+});
+
+document.getElementById('jumpForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const raw = document.getElementById('jumpYear').value.trim();
+  if (!raw) return;
+  const bc = /bc/i.test(raw);
+  const num = parseInt(raw.replace(/[^0-9]/g,''), 10);
+  if (isNaN(num)) return;
+  const yv = toAstronomical(num, bc ? 'BC' : 'AD');
+  scrollWrap.scrollLeft = xFor(yv) - scrollWrap.clientWidth/2;
+});
+
+// ---------- detail panel ----------
+const detailOverlay = document.getElementById('detailOverlay');
+let currentDetailId = null;
+function openDetail(e){
+  currentDetailId = e.id;
+  document.getElementById('dEra').textContent = CAT_LABELS[e.cat] || 'General history';
+  document.getElementById('dEra').style.background = CAT_COLORS[e.cat] || CAT_COLORS.verdigris;
+  document.getElementById('dTitle').textContent = e.title;
+  let dateStr = yearLabel(Math.floor(e.year != null ? toAstronomical(e.year, e.era || 'AD') : e.yv));
+  if (e.month) dateStr = `${e.month}${e.day ? ' ' + e.day : ''}, ${dateStr}`;
+  document.getElementById('dDate').textContent = dateStr;
+  document.getElementById('dBody').textContent = e.body;
+  document.getElementById('dDelete').classList.toggle('hidden', !e.custom);
+  detailOverlay.classList.remove('hidden');
+}
+document.getElementById('closeDetail').addEventListener('click', () => detailOverlay.classList.add('hidden'));
+detailOverlay.addEventListener('click', e => { if (e.target === detailOverlay) detailOverlay.classList.add('hidden'); });
+document.getElementById('dDelete').addEventListener('click', async () => {
+  await db.collection('events').doc(currentDetailId).delete();
+  detailOverlay.classList.add('hidden');
+});
+
+// ---------- add form ----------
+const addOverlay = document.getElementById('addOverlay');
+document.getElementById('openAdd').addEventListener('click', () => addOverlay.classList.remove('hidden'));
+document.getElementById('closeAdd').addEventListener('click', () => addOverlay.classList.add('hidden'));
+addOverlay.addEventListener('click', e => { if (e.target === addOverlay) addOverlay.classList.add('hidden'); });
+
+document.getElementById('addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const title = document.getElementById('fTitle').value.trim();
+  const year = parseInt(document.getElementById('fYear').value, 10);
+  const era = document.getElementById('fEra').value;
+  const month = document.getElementById('fMonth').value || null;
+  const day = document.getElementById('fDay').value ? parseInt(document.getElementById('fDay').value,10) : null;
+  const cat = document.getElementById('fCategory').value;
+  const body = document.getElementById('fBody').value.trim();
+  if (!title || !year || !body) return;
+
+  const yv = yearValueOf(year, era, month, day);
+  await db.collection('events').add({ title, year, era, month, day, cat, body });
+  document.getElementById('addForm').reset();
+  addOverlay.classList.add('hidden');
+  scrollWrap.scrollLeft = xFor(yv) - scrollWrap.clientWidth/2;
+});
+
+// ---------- init ----------
+renderLegend();
+setTrackWidth();
+// start centered on the mid-1900s so both ancient and modern history are reachable by scrolling either way
+scrollWrap.scrollLeft = xFor(1950) - scrollWrap.clientWidth/2;
+render();
+</script>
+</body>
+</html>
