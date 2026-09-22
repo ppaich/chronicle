@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
 <script>eruda.init();</script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --paper:#ECE4D0;
@@ -309,6 +310,11 @@
     cursor:pointer;
     font-size:13px;
   }
+  .panel .delete.edit{
+    border-color:var(--verdigris);
+    color:var(--verdigris);
+    margin-right:8px;
+  }
 
   /* add form */
   .field{margin-bottom:14px;}
@@ -408,6 +414,7 @@
         <button type="submit">Go</button>
       </form>
       <button class="addbtn" id="openAdd">+ Add event</button>
+      <button class="signoutbtn" id="exportBtn">Export to Excel</button>
       <button class="signoutbtn" id="signOutBtn">Sign out</button>
     </div>
   </header>
@@ -433,6 +440,7 @@
     <h2 id="dTitle"></h2>
     <div class="date" id="dDate"></div>
     <div class="body" id="dBody"></div>
+    <button class="delete edit hidden" id="dEdit">Edit this event</button>
     <button class="delete hidden" id="dDelete">Delete this event</button>
   </div>
 </div>
@@ -440,7 +448,7 @@
 <div class="overlay hidden" id="addOverlay">
   <div class="panel">
     <button class="panel-close" id="closeAdd">&times;</button>
-    <h2 style="font-family:'Fraunces',serif;font-size:22px;margin-top:2px;">Add an event</h2>
+    <h2 id="addFormHeading" style="font-family:'Fraunces',serif;font-size:22px;margin-top:2px;">Add an event</h2>
     <form id="addForm">
       <div class="field">
         <label>Title</label>
@@ -506,7 +514,7 @@
         <label>What happened</label>
         <textarea id="fBody" required placeholder="Write the explanation the reader will see when they click this event."></textarea>
       </div>
-      <button type="submit" class="submitbtn">Add to timeline</button>
+      <button type="submit" class="submitbtn" id="addSubmitBtn">Add to timeline</button>
       <div class="formerror" id="addError"></div>
     </form>
   </div>
@@ -838,8 +846,10 @@ document.getElementById('jumpForm').addEventListener('submit', e => {
 // ---------- detail panel ----------
 const detailOverlay = document.getElementById('detailOverlay');
 let currentDetailId = null;
+let currentDetailEvent = null;
 function openDetail(e){
   currentDetailId = e.id;
+  currentDetailEvent = e;
   const photoEl = document.getElementById('dPhoto');
   if (e.photo){ photoEl.src = e.photo; photoEl.classList.remove('hidden'); }
   else { photoEl.src = ''; photoEl.classList.add('hidden'); }
@@ -850,6 +860,7 @@ function openDetail(e){
   if (e.month) dateStr = `${e.month}${e.day ? ' ' + e.day : ''}, ${dateStr}`;
   document.getElementById('dDate').textContent = dateStr;
   document.getElementById('dBody').textContent = e.body;
+  document.getElementById('dEdit').classList.toggle('hidden', !e.custom);
   document.getElementById('dDelete').classList.toggle('hidden', !e.custom);
   detailOverlay.classList.remove('hidden');
 }
@@ -859,10 +870,47 @@ document.getElementById('dDelete').addEventListener('click', async () => {
   await db.collection('events').doc(currentDetailId).delete();
   detailOverlay.classList.add('hidden');
 });
+document.getElementById('dEdit').addEventListener('click', () => {
+  detailOverlay.classList.add('hidden');
+  openEditForm(currentDetailEvent);
+});
 
 // ---------- add form ----------
 const addOverlay = document.getElementById('addOverlay');
-document.getElementById('openAdd').addEventListener('click', () => addOverlay.classList.remove('hidden'));
+let editingId = null;
+
+function openAddForNew(){
+  editingId = null;
+  document.getElementById('addForm').reset();
+  pendingPhotoDataUrl = null;
+  photoPreviewWrap.classList.add('hidden');
+  document.getElementById('addError').textContent = '';
+  document.getElementById('addFormHeading').textContent = 'Add an event';
+  document.getElementById('addSubmitBtn').textContent = 'Add to timeline';
+  addOverlay.classList.remove('hidden');
+}
+
+function openEditForm(e){
+  editingId = e.id;
+  document.getElementById('fTitle').value = e.title || '';
+  document.getElementById('fYear').value = e.year != null ? e.year : '';
+  document.getElementById('fEra').value = e.era || 'AD';
+  document.getElementById('fMonth').value = e.month || '';
+  document.getElementById('fDay').value = e.day || '';
+  document.getElementById('fCategory').value = e.cat || 'verdigris';
+  document.getElementById('fBody').value = e.body || '';
+  document.getElementById('fSize').value = e.size || 'medium';
+  pendingPhotoDataUrl = e.photo || null;
+  photoInput.value = '';
+  if (e.photo){ photoPreviewImg.src = e.photo; photoPreviewWrap.classList.remove('hidden'); }
+  else { photoPreviewWrap.classList.add('hidden'); }
+  document.getElementById('addError').textContent = '';
+  document.getElementById('addFormHeading').textContent = 'Edit event';
+  document.getElementById('addSubmitBtn').textContent = 'Save changes';
+  addOverlay.classList.remove('hidden');
+}
+
+document.getElementById('openAdd').addEventListener('click', openAddForNew);
 document.getElementById('closeAdd').addEventListener('click', () => addOverlay.classList.add('hidden'));
 addOverlay.addEventListener('click', e => { if (e.target === addOverlay) addOverlay.classList.add('hidden'); });
 
@@ -927,18 +975,48 @@ document.getElementById('addForm').addEventListener('submit', async e => {
   const yv = yearValueOf(year, era, month, day);
   const errEl = document.getElementById('addError');
   errEl.textContent = '';
+  const data = { title, year, era, month, day, cat, body, size, photo: pendingPhotoDataUrl || null };
   try{
-    await db.collection('events').add({ title, year, era, month, day, cat, body, size, photo: pendingPhotoDataUrl || null });
+    if (editingId){
+      await db.collection('events').doc(editingId).update(data);
+    } else {
+      await db.collection('events').add(data);
+    }
   }catch(err){
     errEl.textContent = err.message;
-    console.error('add event failed', err);
+    console.error('save event failed', err);
     return;
   }
   document.getElementById('addForm').reset();
   pendingPhotoDataUrl = null;
   photoPreviewWrap.classList.add('hidden');
+  editingId = null;
   addOverlay.classList.add('hidden');
   scrollWrap.scrollLeft = xFor(yv) - scrollWrap.clientWidth/2;
+});
+
+// ---------- export ----------
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const events = allEvents();
+  const rows = events.map(e => {
+    let dateStr = yearLabel(toAstronomical(e.year != null ? e.year : Math.floor(e.yv), e.era || 'AD'));
+    return {
+      Title: e.title,
+      Date: dateStr,
+      Month: e.month || '',
+      Day: e.day || '',
+      Category: CAT_LABELS[e.cat] || '',
+      Description: e.body,
+      'Has photo': e.photo ? 'Yes' : 'No',
+      'Thumbnail size': e.photo ? (e.size || 'medium') : '',
+      Source: e.custom ? 'Added by you' : 'Built-in'
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:32},{wch:12},{wch:10},{wch:6},{wch:20},{wch:60},{wch:10},{wch:14},{wch:14}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Chronicle events');
+  XLSX.writeFile(wb, 'chronicle-events.xlsx');
 });
 
 // ---------- init ----------
