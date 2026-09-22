@@ -208,6 +208,37 @@
   .marker.above .marker-title{top:-16px;}
   .marker.below .marker-title{top:16px;}
 
+  .marker-photo{
+    position:absolute;
+    top:50%;
+    transform:translate(-50%,-50%);
+    border-radius:6px;
+    border:2px solid var(--panel);
+    cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,0.4);
+    object-fit:cover;
+    background:var(--paper-deep);
+  }
+  .marker-photo:hover{z-index:5;}
+
+  .photopreview{
+    display:flex;align-items:center;gap:10px;margin-top:8px;
+  }
+  .photopreview img{
+    width:56px;height:56px;object-fit:cover;border-radius:6px;
+    border:1px solid var(--line);
+  }
+  .photopreview button{
+    border:1px solid var(--line);background:transparent;color:var(--ink-soft);
+    padding:5px 9px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;
+  }
+  .sizehint{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+
+  .panel-photo{
+    width:100%;max-height:220px;object-fit:cover;border-radius:8px;
+    margin-bottom:14px;border:1px solid var(--line);display:block;
+  }
+
   .legend{
     position:absolute;
     left:16px;bottom:12px;
@@ -397,6 +428,7 @@
 <div class="overlay hidden" id="detailOverlay">
   <div class="panel">
     <button class="panel-close" id="closeDetail">&times;</button>
+    <img class="panel-photo hidden" id="dPhoto" src="" alt="">
     <div class="era" id="dEra"></div>
     <h2 id="dTitle"></h2>
     <div class="date" id="dDate"></div>
@@ -442,6 +474,23 @@
           <label>Day (optional)</label>
           <input type="number" id="fDay" min="1" max="31" placeholder="e.g. 9">
         </div>
+      </div>
+      <div class="field">
+        <label>Photo or icon (optional)</label>
+        <input type="file" id="fPhoto" accept="image/*">
+        <div class="photopreview hidden" id="photoPreviewWrap">
+          <img id="photoPreviewImg" src="" alt="">
+          <button type="button" id="removePhoto">Remove</button>
+        </div>
+      </div>
+      <div class="field" id="sizeField">
+        <label>Thumbnail size</label>
+        <select id="fSize">
+          <option value="small">Small</option>
+          <option value="medium" selected>Medium</option>
+          <option value="large">Large — for major, world-scale events</option>
+        </select>
+        <div class="sizehint">Only matters if you add a photo above. Events without a photo stay a plain dot.</div>
       </div>
       <div class="field">
         <label>Category</label>
@@ -676,14 +725,39 @@ function renderTicks(){
 
 const CAT_COLORS = { verdigris:'#3F6357', brass:'#A97C3C', rose:'#93493C', indigo:'#38475F', olive:'#63652E' };
 const CAT_LABELS = { verdigris:'General history', brass:'Science & technology', rose:'War & politics', indigo:'Art & culture', olive:'Society & ideas' };
+const PHOTO_SIZE_PX = { small: 30, medium: 46, large: 70 };
 
 function renderMarkers(){
   markersLayer.innerHTML = '';
   const events = allEvents();
   events.forEach((e, i) => {
     const x = xFor(e.yv);
+    const above = i % 2 === 0;
+
+    if (e.photo){
+      const px = PHOTO_SIZE_PX[e.size] || PHOTO_SIZE_PX.medium;
+      const img = document.createElement('img');
+      img.className = 'marker-photo';
+      img.src = e.photo;
+      img.style.left = x + 'px';
+      img.style.width = px + 'px';
+      img.style.height = px + 'px';
+      img.style.top = above ? `calc(50% - ${px/2 + 18}px)` : `calc(50% + ${px/2 + 18}px)`;
+      img.title = e.title;
+      img.addEventListener('click', () => openDetail(e));
+      markersLayer.appendChild(img);
+
+      const label = document.createElement('div');
+      label.className = 'marker-title';
+      label.style.left = x + 'px';
+      label.style.top = above ? `calc(50% - ${px + 22}px)` : `calc(50% + ${px + 8}px)`;
+      label.textContent = e.title;
+      markersLayer.appendChild(label);
+      return;
+    }
+
     const dot = document.createElement('div');
-    dot.className = 'marker ' + (i % 2 === 0 ? 'above' : 'below');
+    dot.className = 'marker ' + (above ? 'above' : 'below');
     dot.style.left = x + 'px';
     dot.style.background = CAT_COLORS[e.cat] || CAT_COLORS.verdigris;
     dot.title = e.title;
@@ -766,6 +840,9 @@ const detailOverlay = document.getElementById('detailOverlay');
 let currentDetailId = null;
 function openDetail(e){
   currentDetailId = e.id;
+  const photoEl = document.getElementById('dPhoto');
+  if (e.photo){ photoEl.src = e.photo; photoEl.classList.remove('hidden'); }
+  else { photoEl.src = ''; photoEl.classList.add('hidden'); }
   document.getElementById('dEra').textContent = CAT_LABELS[e.cat] || 'General history';
   document.getElementById('dEra').style.background = CAT_COLORS[e.cat] || CAT_COLORS.verdigris;
   document.getElementById('dTitle').textContent = e.title;
@@ -789,6 +866,52 @@ document.getElementById('openAdd').addEventListener('click', () => addOverlay.cl
 document.getElementById('closeAdd').addEventListener('click', () => addOverlay.classList.add('hidden'));
 addOverlay.addEventListener('click', e => { if (e.target === addOverlay) addOverlay.classList.add('hidden'); });
 
+function resizeImageToDataUrl(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w >= h){ if (w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; } }
+        else { if (h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('Could not read that image'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('Could not read that file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+let pendingPhotoDataUrl = null;
+const photoInput = document.getElementById('fPhoto');
+const photoPreviewWrap = document.getElementById('photoPreviewWrap');
+const photoPreviewImg = document.getElementById('photoPreviewImg');
+
+photoInput.addEventListener('change', async () => {
+  const file = photoInput.files[0];
+  if (!file) return;
+  const errEl = document.getElementById('addError');
+  errEl.textContent = '';
+  try{
+    pendingPhotoDataUrl = await resizeImageToDataUrl(file, 320, 0.75);
+    photoPreviewImg.src = pendingPhotoDataUrl;
+    photoPreviewWrap.classList.remove('hidden');
+  }catch(err){
+    errEl.textContent = err.message;
+  }
+});
+document.getElementById('removePhoto').addEventListener('click', () => {
+  pendingPhotoDataUrl = null;
+  photoInput.value = '';
+  photoPreviewWrap.classList.add('hidden');
+});
+
 document.getElementById('addForm').addEventListener('submit', async e => {
   e.preventDefault();
   const title = document.getElementById('fTitle').value.trim();
@@ -798,19 +921,22 @@ document.getElementById('addForm').addEventListener('submit', async e => {
   const day = document.getElementById('fDay').value ? parseInt(document.getElementById('fDay').value,10) : null;
   const cat = document.getElementById('fCategory').value;
   const body = document.getElementById('fBody').value.trim();
+  const size = document.getElementById('fSize').value;
   if (!title || !year || !body) return;
 
   const yv = yearValueOf(year, era, month, day);
   const errEl = document.getElementById('addError');
   errEl.textContent = '';
   try{
-    await db.collection('events').add({ title, year, era, month, day, cat, body });
+    await db.collection('events').add({ title, year, era, month, day, cat, body, size, photo: pendingPhotoDataUrl || null });
   }catch(err){
     errEl.textContent = err.message;
     console.error('add event failed', err);
     return;
   }
   document.getElementById('addForm').reset();
+  pendingPhotoDataUrl = null;
+  photoPreviewWrap.classList.add('hidden');
   addOverlay.classList.add('hidden');
   scrollWrap.scrollLeft = xFor(yv) - scrollWrap.clientWidth/2;
 });
