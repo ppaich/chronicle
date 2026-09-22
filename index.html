@@ -584,8 +584,7 @@ const builtinEvents = [
 let customEvents = [];
 
 function allEvents(){
-  return [...builtinEvents.map(e=>({...e, yv: yearValueOf(e.year, "AD", e.month, e.day), custom:false})),
-          ...customEvents];
+  return customEvents;
 }
 
 // ---------- firebase ----------
@@ -615,13 +614,35 @@ function subscribeEvents(){
   }, err => console.error('sync error', err));
 }
 
-auth.onAuthStateChanged(user => {
+async function seedBuiltinEventsIfNeeded(){
+  try{
+    const seedRef = db.collection('meta').doc('seed');
+    const seedDoc = await seedRef.get();
+    if (seedDoc.exists) return;
+    const batch = db.batch();
+    builtinEvents.forEach(ev => {
+      const ref = db.collection('events').doc();
+      batch.set(ref, {
+        title: ev.title, year: ev.year, era: 'AD',
+        month: ev.month || null, day: ev.day || null,
+        cat: ev.cat, body: ev.body, size: 'medium', photo: null, builtin: true
+      });
+    });
+    batch.set(seedRef, { done: true, seededAt: firebase.firestore.FieldValue.serverTimestamp() });
+    await batch.commit();
+  }catch(err){
+    console.error('seeding built-in events failed', err);
+  }
+}
+
+auth.onAuthStateChanged(async user => {
   const gate = document.getElementById('authGate');
   const app = document.getElementById('app');
   if (user){
     gate.classList.add('hidden');
     app.classList.remove('hidden');
     subscribeEvents();
+    await seedBuiltinEventsIfNeeded();
   } else {
     gate.classList.remove('hidden');
     app.classList.add('hidden');
@@ -1009,7 +1030,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
       Description: e.body,
       'Has photo': e.photo ? 'Yes' : 'No',
       'Thumbnail size': e.photo ? (e.size || 'medium') : '',
-      Source: e.custom ? 'Added by you' : 'Built-in'
+      Source: e.builtin ? 'Built-in' : 'Added by you'
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);
